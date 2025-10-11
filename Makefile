@@ -1,7 +1,7 @@
 
 .PHONY: build
 build:
-	echo 'build'.
+	uv build
 
 .PHONY: publish-test
 publish-test: build
