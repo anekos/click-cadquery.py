@@ -1,6 +1,7 @@
 # click-cadquery
 
 [![PyPI version](https://badge.fury.io/py/click-cadquery.svg)](https://badge.fury.io/py/click-cadquery)
+[![Python Versions](https://img.shields.io/pypi/pyversions/click-cadquery.svg)](https://pypi.org/project/click-cadquery/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Click decorators for CadQuery CLI applications with automatic option generation from Pydantic models.
