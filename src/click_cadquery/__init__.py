@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, Literal
+import typing
 
 import click
 from pydantic import BaseModel
@@ -28,6 +29,16 @@ def define_options(klass: type[BaseModel]):  # type: ignore
 
         for field_name, field_data in klass.model_fields.items():
             anot = field_data.annotation
+
+            if isinstance(anot, typing._LiteralGenericAlias):
+                decorated = click.option(
+                    _to_option_name(field_name),
+                    type=click.Choice(list(anot.__args__)),  # type: ignore
+                    default=field_data.default,
+                    help=field_data.description,
+                )(decorated)
+                continue
+
             assert isinstance(anot, type)
 
             # e.g. @click.option("--width", type=float, default=100.0)
