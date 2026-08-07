@@ -9,8 +9,6 @@ from pydantic import BaseModel
 from click_cadquery import define_options
 from click_cadquery.git import version_number as ver
 
-TypePath = click.types.Path(path_type=Path)
-
 
 class Param(BaseModel):
     width: int = 100
