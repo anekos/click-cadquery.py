@@ -24,6 +24,19 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 
+[dependency-groups]
+dev = [
+    "mypy>=1.17",
+    "ruff>=0.12",
+]
+
+[tool.mypy]
+files = ["src", "sample"]
+
+[[tool.mypy.overrides]]
+module = ["cadquery.*"]
+ignore_missing_imports = true
+
 [build-system]
 requires = ["uv_build>=0.8.3,<0.9.0"]
 build-backend = "uv_build"
