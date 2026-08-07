@@ -1,3 +1,4 @@
+import types
 import typing
 from collections.abc import Callable
 from pathlib import Path
@@ -38,6 +39,16 @@ def define_options(klass: type[BaseModel]):  # type: ignore
                     help=field_data.description,
                 )(decorated)
                 continue
+
+            # `X | None` — unwrap to X; unset options fall back to the None default
+            if typing.get_origin(anot) in (types.UnionType, typing.Union):
+                inners = [a for a in typing.get_args(anot) if a is not type(None)]
+                if len(inners) != 1 or not isinstance(inners[0], type):
+                    raise TypeError(
+                        f"Unsupported annotation for field {field_name!r}: {anot!r}"
+                        " (only `X | None` with a simple type X is supported)"
+                    )
+                anot = inners[0]
 
             assert isinstance(anot, type)
 

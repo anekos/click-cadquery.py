@@ -139,6 +139,7 @@ Decorator that automatically generates Click options from a Pydantic model.
 **Generated CLI signature:**
 - Each model field becomes a `--field-name` option
 - Field types are preserved for Click type validation
+- `X | None` fields are parsed as `X`; omitting the option yields `None`
 - Field defaults and descriptions are used for CLI help
 - Automatically adds `output` argument for file output
 - Automatically adds `--show` flag for showing results
