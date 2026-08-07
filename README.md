@@ -35,6 +35,7 @@ from click_cadquery import define_options
 from click_cadquery.git import version_number as ver
 from pydantic import BaseModel
 
+
 class Param(BaseModel):
     width: int = 100
     height: int = 100
@@ -45,10 +46,12 @@ class Param(BaseModel):
     def filename(self) -> str:
         return f"v{ver()}-{self.width}w{self.height}h{self.depth}d{self.thickness}t.stl"
 
+
 @click.group(context_settings={"show_default": True})
 @click.pass_context
 def main(ctx: click.Context) -> None:
     pass
+
 
 @main.command(name="build")
 @define_options(Param)
@@ -62,6 +65,7 @@ def command_build(output: Path | None, param: Param, show: bool) -> None:
     result.export(str(output if output else dist / param.filename))
     if show:
         vis.show(result, axes=True, axes_length=10)
+
 
 def build(param: Param) -> cq.Workplane:
     result = cq.Workplane("XY")
@@ -78,6 +82,7 @@ def build(param: Param) -> cq.Workplane:
     result = result.edges("|Z").fillet(fillet)
 
     return result
+
 
 if __name__ == "__main__":
     main()
