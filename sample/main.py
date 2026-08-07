@@ -20,7 +20,7 @@ class Param(BaseModel):
 
     @property
     def filename(self) -> str:
-        return f"v{ver()}-{self.part}-{self.width}w{self.height}h{self.depth}d{self.thickness}t.stl"
+        return f"{self.name}-v{ver()}-{self.part}-{self.width}w{self.height}h{self.depth}d{self.thickness}t.stl"
 
 
 @click.group(context_settings={"show_default": True})
