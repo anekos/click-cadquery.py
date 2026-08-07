@@ -8,3 +8,6 @@ dependencies = [
     "cadquery>=2.5.2",
     "click>=8.3.0",
 ]
+
+[tool.ruff.lint.isort]
+known-first-party = ["click_cadquery"]
