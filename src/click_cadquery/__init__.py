@@ -1,7 +1,7 @@
+import typing
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, TypeVar, Literal
-import typing
+from typing import Any, Literal, TypeVar
 
 import click
 from pydantic import BaseModel
@@ -30,10 +30,10 @@ def define_options(klass: type[BaseModel]):  # type: ignore
         for field_name, field_data in klass.model_fields.items():
             anot = field_data.annotation
 
-            if isinstance(anot, typing._LiteralGenericAlias):
+            if typing.get_origin(anot) is Literal:
                 decorated = click.option(
                     _to_option_name(field_name),
-                    type=click.Choice(list(anot.__args__)),  # type: ignore
+                    type=click.Choice(list(typing.get_args(anot))),
                     default=field_data.default,
                     help=field_data.description,
                 )(decorated)
