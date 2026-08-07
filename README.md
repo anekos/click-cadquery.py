@@ -27,13 +27,15 @@ pip install click-cadquery
 
 ```python
 from pathlib import Path
+from typing import Literal
 
 import cadquery as cq
-import cadquery.vis as vis
 import click
+from cadquery import vis
+from pydantic import BaseModel
+
 from click_cadquery import define_options
 from click_cadquery.git import version_number as ver
-from pydantic import BaseModel
 
 
 class Param(BaseModel):
@@ -41,10 +43,12 @@ class Param(BaseModel):
     height: int = 100
     depth: int = 100
     thickness: float = 2.0
+    name: str = "my-box"
+    part: Literal["case", "cover", "box"] = "box"
 
     @property
     def filename(self) -> str:
-        return f"v{ver()}-{self.width}w{self.height}h{self.depth}d{self.thickness}t.stl"
+        return f"{self.name}-v{ver()}-{self.part}-{self.width}w{self.height}h{self.depth}d{self.thickness}t.stl"
 
 
 @click.group(context_settings={"show_default": True})
@@ -91,7 +95,7 @@ if __name__ == "__main__":
 This automatically creates a CLI with the following options:
 
 ```bash
-python main.py build --width 150 --height 80 --depth 50 --thickness 3.0 --show
+python main.py build --width 150 --height 80 --depth 50 --thickness 3.0 --part case --name my-case --show
 ```
 
 ## API Reference
