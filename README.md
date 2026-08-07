@@ -47,13 +47,17 @@ class BoxParam(BaseModel):
         default=1.0, description="Fillet radius of vertical edges"
     )
     name: str = Field(default="my-box", description="Base name of the output file")
+    label: str | None = Field(
+        default=None, description="Extra label appended to the name"
+    )
     part: Literal["case", "cover", "box"] = Field(
         default="box", description="Part to build"
     )
 
     @property
     def filename(self) -> str:
-        return f"{self.name}-v{ver()}-{self.part}-{self.width}w{self.height}h{self.depth}d{self.thickness}t.stl"
+        label = "" if self.label is None else f"-{self.label}"
+        return f"{self.name}{label}-v{ver()}-{self.part}-{self.width}w{self.height}h{self.depth}d{self.thickness}t.stl"
 
 
 class CylinderParam(BaseModel):
@@ -139,6 +143,7 @@ Decorator that automatically generates Click options from a Pydantic model.
 **Generated CLI signature:**
 - Each model field becomes a `--field-name` option
 - Field types are preserved for Click type validation
+- `X | None` fields are parsed as `X`; omitting the option yields `None`
 - Field defaults and descriptions are used for CLI help
 - Automatically adds `output` argument for file output
 - Automatically adds `--show` flag for showing results
