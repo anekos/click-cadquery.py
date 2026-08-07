@@ -6,6 +6,7 @@ def version_number() -> int:
         ["git", "log", "--oneline"],
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.returncode == 0:
         return len([line for line in result.stdout.split("\n") if line.strip() != ""])

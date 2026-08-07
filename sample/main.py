@@ -2,11 +2,12 @@ from pathlib import Path
 from typing import Literal
 
 import cadquery as cq
-import cadquery.vis as vis
 import click
+from cadquery import vis
+from pydantic import BaseModel
+
 from click_cadquery import define_options
 from click_cadquery.git import version_number as ver
-from pydantic import BaseModel
 
 TypePath = click.types.Path(path_type=Path)
 
