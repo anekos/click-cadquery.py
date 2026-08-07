@@ -32,23 +32,38 @@ from typing import Literal
 import cadquery as cq
 import click
 from cadquery import vis
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from click_cadquery import define_options
 from click_cadquery.git import version_number as ver
 
 
-class Param(BaseModel):
-    width: int = 100
-    height: int = 100
-    depth: int = 100
-    thickness: float = 2.0
-    name: str = "my-box"
-    part: Literal["case", "cover", "box"] = "box"
+class BoxParam(BaseModel):
+    width: int = Field(default=100, description="Outer width of the box")
+    height: int = Field(default=100, description="Outer height of the box")
+    depth: int = Field(default=100, description="Outer depth of the box")
+    thickness: float = Field(default=2.0, description="Wall thickness")
+    corner_radius: float = Field(
+        default=1.0, description="Fillet radius of vertical edges"
+    )
+    name: str = Field(default="my-box", description="Base name of the output file")
+    part: Literal["case", "cover", "box"] = Field(
+        default="box", description="Part to build"
+    )
 
     @property
     def filename(self) -> str:
         return f"{self.name}-v{ver()}-{self.part}-{self.width}w{self.height}h{self.depth}d{self.thickness}t.stl"
+
+
+class CylinderParam(BaseModel):
+    radius: float = Field(default=30.0, description="Radius of the cylinder")
+    height: float = Field(default=50.0, description="Height of the cylinder")
+    name: str = Field(default="my-cylinder", description="Base name of the output file")
+
+    @property
+    def filename(self) -> str:
+        return f"{self.name}-v{ver()}-{self.radius}r{self.height}h.stl"
 
 
 @click.group(context_settings={"show_default": True})
@@ -58,20 +73,20 @@ def main(ctx: click.Context) -> None:
 
 
 @main.command(name="build")
-@define_options(Param)
-def command_build(output: Path | None, param: Param, show: bool) -> None:
+@define_options(BoxParam)
+def command_build(output: Path | None, param: BoxParam, show: bool) -> None:
     print("Build with:", param)
-
-    result = build(param)
-
-    dist = Path("dist")
-    dist.mkdir(exist_ok=True)
-    result.export(str(output if output else dist / param.filename))
-    if show:
-        vis.show(result, axes=True, axes_length=10)
+    export(build_box(param), param.filename, output, show)
 
 
-def build(param: Param) -> cq.Workplane:
+@main.command(name="cylinder")
+@define_options(CylinderParam)
+def command_cylinder(output: Path | None, param: CylinderParam, show: bool) -> None:
+    print("Build with:", param)
+    export(build_cylinder(param), param.filename, output, show)
+
+
+def build_box(param: BoxParam) -> cq.Workplane:
     result = cq.Workplane("XY")
 
     result = result.box(
@@ -82,10 +97,23 @@ def build(param: Param) -> cq.Workplane:
 
     result = result.faces(">Z").shell(param.thickness, kind="intersection")
 
-    fillet = param.thickness / 2
-    result = result.edges("|Z").fillet(fillet)
+    result = result.edges("|Z").fillet(param.corner_radius)
 
     return result
+
+
+def build_cylinder(param: CylinderParam) -> cq.Workplane:
+    return cq.Workplane("XY").cylinder(param.height, param.radius)
+
+
+def export(
+    result: cq.Workplane, filename: str, output: Path | None, show: bool
+) -> None:
+    dist = Path("dist")
+    dist.mkdir(exist_ok=True)
+    result.export(str(output if output else dist / filename))
+    if show:
+        vis.show(result, axes=True, axes_length=10)
 
 
 if __name__ == "__main__":
@@ -95,7 +123,8 @@ if __name__ == "__main__":
 This automatically creates a CLI with the following options:
 
 ```bash
-python main.py build --width 150 --height 80 --depth 50 --thickness 3.0 --part case --name my-case --show
+python main.py build --width 150 --height 80 --depth 50 --thickness 3.0 --corner-radius 2 --part case --name my-case --show
+python main.py cylinder --radius 20 --height 40 --show
 ```
 
 ## API Reference
