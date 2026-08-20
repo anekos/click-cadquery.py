@@ -89,7 +89,7 @@ def export(
     dist.mkdir(exist_ok=True)
     result.export(str(output if output else dist / filename))
     if show:
-        vis.show(result, axes=True, axes_length=10)  # type: ignore[call-arg]
+        vis.show(result)
 
 
 if __name__ == "__main__":
