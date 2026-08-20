@@ -26,109 +26,29 @@ pip install click-cadquery
 ## Quick Start
 
 ```python
-from pathlib import Path
-from typing import Literal
-
 import cadquery as cq
-import click
-from cadquery import vis
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from click_cadquery import define_options
+from click_cadquery import BuildParam, define_app
 from click_cadquery.git import version_number as ver
 
 
-class BoxParam(BaseModel):
+class BoxParam(BuildParam):
     width: int = Field(default=100, description="Outer width of the box")
     height: int = Field(default=100, description="Outer height of the box")
     depth: int = Field(default=100, description="Outer depth of the box")
-    thickness: float = Field(default=2.0, description="Wall thickness")
-    corner_radius: float = Field(
-        default=1.0, description="Fillet radius of vertical edges"
-    )
     name: str = Field(default="my-box", description="Base name of the output file")
-    label: str | None = Field(
-        default=None, description="Extra label appended to the name"
-    )
-    part: Literal["case", "cover", "box"] = Field(
-        default="box", description="Part to build"
-    )
 
     @property
     def filename(self) -> str:
-        label = "" if self.label is None else f"-{self.label}"
-        return f"{self.name}{label}-v{ver()}-{self.part}-{self.width}w{self.height}h{self.depth}d{self.thickness}t.stl"
-
-
-class CylinderParam(BaseModel):
-    radius: float = Field(default=30.0, description="Radius of the cylinder")
-    height: float = Field(default=50.0, description="Height of the cylinder")
-    name: str = Field(default="my-cylinder", description="Base name of the output file")
-
-    @property
-    def filename(self) -> str:
-        return f"{self.name}-v{ver()}-{self.radius}r{self.height}h.stl"
-
-
-@click.group(context_settings={"show_default": True})
-@click.pass_context
-def main(ctx: click.Context) -> None:
-    pass
-
-
-@main.command(name="build")
-@define_options(BoxParam)
-def command_build(
-    output: Path | None, param: BoxParam, show: bool, screenshot: bool
-) -> None:
-    print("Build with:", param)
-    export(build_box(param), param.filename, output, show, screenshot)
-
-
-@main.command(name="cylinder")
-@define_options(CylinderParam)
-def command_cylinder(
-    output: Path | None, param: CylinderParam, show: bool, screenshot: bool
-) -> None:
-    print("Build with:", param)
-    export(build_cylinder(param), param.filename, output, show, screenshot)
+        return f"{self.name}-v{ver()}-{self.width}w{self.height}h{self.depth}d.stl"
 
 
 def build_box(param: BoxParam) -> cq.Workplane:
-    result = cq.Workplane("XY")
-
-    result = result.box(
-        length=param.depth,
-        height=param.height,
-        width=param.width,
-    )
-
-    result = result.faces(">Z").shell(param.thickness, kind="intersection")
-
-    result = result.edges("|Z").fillet(param.corner_radius)
-
-    return result
+    return cq.Workplane("XY").box(param.depth, param.width, param.height)
 
 
-def build_cylinder(param: CylinderParam) -> cq.Workplane:
-    return cq.Workplane("XY").cylinder(param.height, param.radius)
-
-
-def export(
-    result: cq.Workplane,
-    filename: str,
-    output: Path | None,
-    show: bool,
-    screenshot: bool,
-) -> None:
-    dist = Path("dist")
-    dist.mkdir(exist_ok=True)
-    export_path = output if output else dist / filename
-    result.export(str(export_path))
-    if screenshot:
-        vis.show(result, interact=False, screenshot=f"{export_path}.png")
-    if show:
-        vis.show(result)
+main = define_app(BoxParam, build_box)
 
 
 if __name__ == "__main__":
@@ -138,15 +58,41 @@ if __name__ == "__main__":
 This automatically creates a CLI with the following options:
 
 ```bash
-python main.py build --width 150 --height 80 --depth 50 --thickness 3.0 --corner-radius 2 --part case --name my-case --show
-python main.py cylinder --radius 20 --height 40 --screenshot
+python main.py build --width 150 --height 80 --depth 50 --name my-case --show
+python main.py build --width 150 --height 80 --depth 50 --name my-case --screenshot
 ```
 
 ## API Reference
 
+### `define_app(Param: type[BuildParam], build: Callable[[Param], cq.Workplane]) -> click.Group`
+
+Builds a complete single-command CLI (as used in the Quick Start above): a
+`build` command generated from `Param`'s fields, wired to `build`, with
+export to `dist/` plus `--show`/`--screenshot` handled automatically.
+
+**Parameters:**
+- `Param`: A `BuildParam` subclass whose fields become CLI options
+- `build`: Function that takes a `Param` instance and returns a `cq.Workplane`
+
+### `BuildParam`
+
+Base class for `define_app`/`define_build_command` parameter models.
+Subclasses must implement a `filename` property, used as the default export
+filename under `dist/` when no output path is given on the command line.
+
+### `define_build_command(group: click.Group, Param: type[BuildParam], build: Callable[[Param], cq.Workplane], name: str = "build")`
+
+Lower-level building block behind `define_app`: attaches a single build
+command to an existing `click.Group` instead of creating a new one. Useful
+when combining a `define_app`-style command with other manually defined
+commands on the same CLI (see `samples/multi`, which composes multiple
+commands by hand with `define_options` directly).
+
 ### `define_options(klass: type[BaseModel])`
 
 Decorator that automatically generates Click options from a Pydantic model.
+This is what `define_build_command`/`define_app` use internally; use it
+directly for manually composed multi-command CLIs (see `samples/multi`).
 
 **Parameters:**
 - `klass`: A Pydantic BaseModel class whose fields will be converted to CLI options
