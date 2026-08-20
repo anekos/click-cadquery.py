@@ -1,6 +1,6 @@
 .PHONY: add_library
 add_library:
-	uv pip install -e ../
+	uv pip install -e ../../
 
 .PHONY: build
 build: build-box build-cylinder

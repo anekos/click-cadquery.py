@@ -31,7 +31,7 @@ dev = [
 ]
 
 [tool.mypy]
-files = ["src", "sample"]
+files = ["src", "samples"]
 
 [[tool.mypy.overrides]]
 module = ["cadquery.*"]
