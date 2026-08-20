@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
+import cadquery as cq
 import click
 from pydantic import BaseModel
 
@@ -63,6 +64,50 @@ def define_options(klass: type[BaseModel]):  # type: ignore
         return decorated
 
     return decorator
+
+
+class BuildParam(BaseModel):
+    @property
+    def filename(self) -> str:
+        raise NotImplementedError
+
+
+TP = TypeVar("TP", bound=BuildParam)
+
+
+def define_build_command(
+    group: click.Group,
+    Param: type[TP],
+    build: Callable[[TP], cq.Workplane],
+    name: str = "build",
+):
+    @group.command(name=name)
+    @define_options(Param)
+    def command_build(output: Path | None, param: TP, show: bool) -> None:
+        print("Build with:", param)
+
+        result = build(param)
+
+        dist = Path("dist")
+        dist.mkdir(exist_ok=True)
+        result.export(str(output if output else dist / param.filename))
+        if show:
+            cq.vis.show(result)
+
+
+def define_app(
+    Param: type[TP],
+    build: Callable[[TP], cq.Workplane],
+) -> click.Group:
+    @click.group(context_settings={"show_default": True})
+    @click.pass_context
+    def main(ctx: click.Context) -> None:
+        # ctx.obj = App()
+        pass
+
+    define_build_command(main, Param, build)
+
+    return main
 
 
 def _to_option_name(field_name: str) -> str:
