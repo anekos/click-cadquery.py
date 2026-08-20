@@ -50,16 +50,20 @@ def main(ctx: click.Context) -> None:
 
 @main.command(name="build")
 @define_options(BoxParam)
-def command_build(output: Path | None, param: BoxParam, show: bool) -> None:
+def command_build(
+    output: Path | None, param: BoxParam, show: bool, screenshot: bool
+) -> None:
     print("Build with:", param)
-    export(build_box(param), param.filename, output, show)
+    export(build_box(param), param.filename, output, show, screenshot)
 
 
 @main.command(name="cylinder")
 @define_options(CylinderParam)
-def command_cylinder(output: Path | None, param: CylinderParam, show: bool) -> None:
+def command_cylinder(
+    output: Path | None, param: CylinderParam, show: bool, screenshot: bool
+) -> None:
     print("Build with:", param)
-    export(build_cylinder(param), param.filename, output, show)
+    export(build_cylinder(param), param.filename, output, show, screenshot)
 
 
 def build_box(param: BoxParam) -> cq.Workplane:
@@ -83,11 +87,18 @@ def build_cylinder(param: CylinderParam) -> cq.Workplane:
 
 
 def export(
-    result: cq.Workplane, filename: str, output: Path | None, show: bool
+    result: cq.Workplane,
+    filename: str,
+    output: Path | None,
+    show: bool,
+    screenshot: bool,
 ) -> None:
     dist = Path("dist")
     dist.mkdir(exist_ok=True)
-    result.export(str(output if output else dist / filename))
+    export_path = output if output else dist / filename
+    result.export(str(export_path))
+    if screenshot:
+        vis.show(result, interact=False, screenshot=f"{export_path}.png")
     if show:
         vis.show(result)
 

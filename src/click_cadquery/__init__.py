@@ -6,13 +6,14 @@ from typing import Any, Literal, TypeVar
 
 import cadquery as cq
 import click
+from cadquery import vis
 from pydantic import BaseModel
 
 TypePath = click.types.Path(path_type=Path)
 T = TypeVar("T", bound=BaseModel)
 
-# (param, output, show)
-CommandFunction = Callable[[T, Path | None, bool], None]
+# (param, output, show, screenshot)
+CommandFunction = Callable[[T, Path | None, bool, bool], None]
 
 
 def define_options(klass: type[BaseModel]):  # type: ignore
@@ -21,12 +22,21 @@ def define_options(klass: type[BaseModel]):  # type: ignore
     """
 
     def decorator(fn: CommandFunction):  # type: ignore
-        def decorated(output: Path | None, show: bool, **kwargs: Any) -> None:
-            return fn(param=klass(**kwargs), output=output, show=show)  # type: ignore
+        def decorated(
+            output: Path | None, show: bool, screenshot: bool, **kwargs: Any
+        ) -> None:
+            return fn(  # type: ignore
+                param=klass(**kwargs), output=output, show=show, screenshot=screenshot
+            )
 
         decorated = click.argument("output", type=TypePath, required=False)(decorated)
         decorated = click.option(
             "--show", is_flag=True, help="Show the result in a viewer"
+        )(decorated)
+        decorated = click.option(
+            "--screenshot",
+            is_flag=True,
+            help="Save a screenshot next to the output file (<output>.png)",
         )(decorated)
 
         for field_name, field_data in klass.model_fields.items():
@@ -83,16 +93,21 @@ def define_build_command(
 ):
     @group.command(name=name)
     @define_options(Param)
-    def command_build(output: Path | None, param: TP, show: bool) -> None:
+    def command_build(
+        output: Path | None, param: TP, show: bool, screenshot: bool
+    ) -> None:
         print("Build with:", param)
 
         result = build(param)
 
         dist = Path("dist")
         dist.mkdir(exist_ok=True)
-        result.export(str(output if output else dist / param.filename))
+        export_path = output if output else dist / param.filename
+        result.export(str(export_path))
+        if screenshot:
+            vis.show(result, interact=False, screenshot=f"{export_path}.png")
         if show:
-            cq.vis.show(result)
+            vis.show(result)
 
 
 def define_app(
