@@ -88,7 +88,7 @@ TP = TypeVar("TP", bound=BuildParam)
 def define_build_command(
     group: click.Group,
     Param: type[TP],
-    build: Callable[[TP], cq.Workplane],
+    build: Callable[[TP], cq.Workplane | cq.Assembly],
     name: str = "build",
 ):
     @group.command(name=name)
@@ -112,7 +112,7 @@ def define_build_command(
 
 def define_app(
     Param: type[TP],
-    build: Callable[[TP], cq.Workplane],
+    build: Callable[[TP], cq.Workplane | cq.Assembly],
 ) -> click.Group:
     @click.group(context_settings={"show_default": True})
     @click.pass_context
