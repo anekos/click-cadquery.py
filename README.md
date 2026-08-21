@@ -66,9 +66,10 @@ python main.py build --width 150 --height 80 --depth 50 --name my-case --screens
 
 ### `define_app(Param: type[BuildParam], build: Callable[[Param], cq.Workplane]) -> click.Group`
 
-Builds a complete single-command CLI (as used in the Quick Start above): a
-`build` command generated from `Param`'s fields, wired to `build`, with
-export to `dist/` plus `--show`/`--screenshot` handled automatically.
+Builds a complete CLI (as used in the Quick Start above): a `build` command
+generated from `Param`'s fields, plus an `interactive` command that prompts
+for each field one at a time, both wired to `build`, with export to `dist/`
+plus `--show`/`--screenshot` handled automatically.
 
 **Parameters:**
 - `Param`: A `BuildParam` subclass whose fields become CLI options
@@ -76,9 +77,10 @@ export to `dist/` plus `--show`/`--screenshot` handled automatically.
 
 ### `BuildParam`
 
-Base class for `define_app`/`define_build_command` parameter models.
-Subclasses must implement a `filename` property, used as the default export
-filename under `dist/` when no output path is given on the command line.
+Base class for `define_app`/`define_build_command`/`define_interactive_command`
+parameter models. Subclasses must implement a `filename` property, used as
+the default export filename under `dist/` when no output path is given on
+the command line.
 
 ### `define_build_command(group: click.Group, Param: type[BuildParam], build: Callable[[Param], cq.Workplane], name: str = "build")`
 
@@ -87,6 +89,15 @@ command to an existing `click.Group` instead of creating a new one. Useful
 when combining a `define_app`-style command with other manually defined
 commands on the same CLI (see `samples/multi`, which composes multiple
 commands by hand with `define_options` directly).
+
+### `define_interactive_command(group: click.Group, Param: type[BuildParam], build: Callable[[Param], cq.Workplane], name: str = "interactive")`
+
+Companion to `define_build_command`: attaches an `interactive` command that
+prompts for each of `Param`'s fields one at a time instead of reading them
+from CLI options. If the collected values fail Pydantic validation, only
+the field(s) implicated by the error are re-prompted (a model-level
+validation error re-prompts every field, since no single field can be
+blamed).
 
 ### `define_options(klass: type[BaseModel])`
 

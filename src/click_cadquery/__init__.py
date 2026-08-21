@@ -7,7 +7,7 @@ from typing import Any, Literal, TypeVar
 import cadquery as cq
 import click
 from cadquery import vis
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 TypePath = click.types.Path(path_type=Path)
 T = TypeVar("T", bound=BaseModel)
@@ -52,14 +52,7 @@ def define_options(klass: type[BaseModel]):  # type: ignore
                 continue
 
             # `X | None` — unwrap to X; unset options fall back to the None default
-            if typing.get_origin(anot) in (types.UnionType, typing.Union):
-                inners = [a for a in typing.get_args(anot) if a is not type(None)]
-                if len(inners) != 1 or not isinstance(inners[0], type):
-                    raise TypeError(
-                        f"Unsupported annotation for field {field_name!r}: {anot!r}"
-                        " (only `X | None` with a simple type X is supported)"
-                    )
-                anot = inners[0]
+            anot, _ = _unwrap_optional(field_name, anot)
 
             assert isinstance(anot, type)
 
@@ -103,11 +96,33 @@ def define_build_command(
         dist = Path("dist")
         dist.mkdir(exist_ok=True)
         export_path = output if output else dist / param.filename
-        result.export(str(export_path))
-        if screenshot:
-            vis.show(result, interact=False, screenshot=f"{export_path}.png")
-        if show:
-            vis.show(result)
+        _export(result, export_path, show, screenshot)
+
+
+def define_interactive_command(
+    group: click.Group,
+    Param: type[TP],
+    build: Callable[[TP], cq.Workplane | cq.Assembly],
+    name: str = "interactive",
+):
+    @group.command(name=name)
+    @click.argument("output", type=TypePath, required=False)
+    @click.option("--show", is_flag=True, help="Show the result in a viewer")
+    @click.option(
+        "--screenshot",
+        is_flag=True,
+        help="Save a screenshot next to the output file (<output>.png)",
+    )
+    def command_interactive(output: Path | None, show: bool, screenshot: bool) -> None:
+        param = _prompt_param(Param)
+        print("Build with:", param)
+
+        result = build(param)
+
+        dist = Path("dist")
+        dist.mkdir(exist_ok=True)
+        export_path = output if output else dist / param.filename
+        _export(result, export_path, show, screenshot)
 
 
 def define_app(
@@ -121,8 +136,82 @@ def define_app(
         pass
 
     define_build_command(main, Param, build)
+    define_interactive_command(main, Param, build)
 
     return main
+
+
+def _export(
+    result: cq.Workplane | cq.Assembly,
+    export_path: Path,
+    show: bool,
+    screenshot: bool,
+) -> None:
+    result.export(str(export_path))
+    if screenshot:
+        vis.show(result, interact=False, screenshot=f"{export_path}.png")
+    if show:
+        vis.show(result)
+
+
+def _unwrap_optional(field_name: str, annotation: Any) -> tuple[Any, bool]:
+    """`X | None` — unwrap to `(X, True)`; anything else is `(annotation, False)`."""
+    if typing.get_origin(annotation) in (types.UnionType, typing.Union):
+        inners = [a for a in typing.get_args(annotation) if a is not type(None)]
+        if len(inners) != 1 or not isinstance(inners[0], type):
+            raise TypeError(
+                f"Unsupported annotation for field {field_name!r}: {annotation!r}"
+                " (only `X | None` with a simple type X is supported)"
+            )
+        return inners[0], True
+    return annotation, False
+
+
+def _prompt_for_field(field_name: str, field_data: Any, current: Any) -> Any:
+    anot = field_data.annotation
+    label = field_data.description or field_name
+
+    if typing.get_origin(anot) is Literal:
+        choices = [str(c) for c in typing.get_args(anot)]
+        return click.prompt(label, default=str(current), type=click.Choice(choices))
+
+    anot, optional = _unwrap_optional(field_name, anot)
+
+    if anot is bool:
+        return click.confirm(label, default=bool(current))
+
+    if optional:
+        raw = click.prompt(
+            label, default="" if current is None else str(current), show_default=True
+        )
+        return None if raw == "" else anot(raw)
+
+    return click.prompt(label, default=current, type=anot)
+
+
+def _prompt_param(Param: type[TP]) -> TP:
+    fields = Param.model_fields
+    values: dict[str, Any] = {name: data.default for name, data in fields.items()}
+    pending = list(fields.keys())
+
+    while True:
+        for name in pending:
+            values[name] = _prompt_for_field(name, fields[name], values[name])
+
+        try:
+            return Param(**values)
+        except ValidationError as e:
+            errors = e.errors()
+            click.echo(click.style("Invalid input:", fg="red"), err=True)
+            for err in errors:
+                loc = ".".join(str(part) for part in err["loc"]) or "(all fields)"
+                click.echo(f"  {loc}: {err['msg']}", err=True)
+
+            field_errors = {err["loc"][0] for err in errors if err["loc"]}
+            if any(not err["loc"] for err in errors):
+                pending = list(fields.keys())
+            else:
+                pending = [name for name in fields if name in field_errors]
 
 
 def _to_option_name(field_name: str) -> str:
