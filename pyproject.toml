@@ -1,6 +1,6 @@
 [project]
 name = "click-cadquery"
-version = "0.5.0"
+version = "0.6.0"
 description = "Click decorators for CadQuery CLI applications with automatic option generation from Pydantic models"
 authors = [
     {name = "anekos"}
