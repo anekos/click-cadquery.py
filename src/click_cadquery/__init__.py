@@ -96,7 +96,7 @@ def define_build_command(
         dist = Path("dist")
         dist.mkdir(exist_ok=True)
         export_path = output if output else dist / param.filename
-        _export(result, export_path, show, screenshot)
+        _export(result, param, export_path, show, screenshot)
 
 
 def define_interactive_command(
@@ -122,7 +122,7 @@ def define_interactive_command(
         dist = Path("dist")
         dist.mkdir(exist_ok=True)
         export_path = output if output else dist / param.filename
-        _export(result, export_path, show, screenshot)
+        _export(result, param, export_path, show, screenshot)
 
 
 def define_app(
@@ -143,11 +143,13 @@ def define_app(
 
 def _export(
     result: cq.Workplane | cq.Assembly,
+    param: BuildParam,
     export_path: Path,
     show: bool,
     screenshot: bool,
 ) -> None:
     result.export(str(export_path))
+    export_path.with_suffix(".json").write_text(param.model_dump_json(indent=2))
     if screenshot:
         vis.show(result, interact=False, screenshot=f"{export_path}.png")
     if show:

@@ -69,7 +69,9 @@ python main.py build --width 150 --height 80 --depth 50 --name my-case --screens
 Builds a complete CLI (as used in the Quick Start above): a `build` command
 generated from `Param`'s fields, plus an `interactive` command that prompts
 for each field one at a time, both wired to `build`, with export to `dist/`
-plus `--show`/`--screenshot` handled automatically.
+plus `--show`/`--screenshot` handled automatically. Alongside the exported
+file, `Param` is also dumped as JSON next to it (same path, `.json`
+extension).
 
 **Parameters:**
 - `Param`: A `BuildParam` subclass whose fields become CLI options
