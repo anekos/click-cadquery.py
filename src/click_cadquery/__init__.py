@@ -1,3 +1,4 @@
+import shlex
 import types
 import typing
 from collections.abc import Callable
@@ -89,7 +90,8 @@ def define_build_command(
     def command_build(
         output: Path | None, param: TP, show: bool, screenshot: bool
     ) -> None:
-        print("Build with:", param)
+        print("Build with:")
+        print(_format_command_line(param))
 
         result = build(param)
 
@@ -115,7 +117,8 @@ def define_interactive_command(
     )
     def command_interactive(output: Path | None, show: bool, screenshot: bool) -> None:
         param = _prompt_param(Param)
-        print("Build with:", param)
+        print("Build with:")
+        print(_format_command_line(param))
 
         result = build(param)
 
@@ -154,6 +157,17 @@ def _export(
         vis.show(result, interact=False, screenshot=f"{export_path}.png")
     if show:
         vis.show(result)
+
+
+def _format_command_line(param: BuildParam) -> str:
+    """CLI flags reproducing `param`, quoted only where the shell requires it."""
+    parts = []
+    for field_name, value in param.model_dump().items():
+        if value is None:
+            continue
+        parts.append(_to_option_name(field_name))
+        parts.append(shlex.quote(str(value)))
+    return " ".join(parts)
 
 
 def _unwrap_optional(field_name: str, annotation: Any) -> tuple[Any, bool]:
