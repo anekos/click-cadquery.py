@@ -1,4 +1,5 @@
 import shlex
+import sys
 import types
 import typing
 from collections.abc import Callable
@@ -90,15 +91,7 @@ def define_build_command(
     def command_build(
         output: Path | None, param: TP, show: bool, screenshot: bool
     ) -> None:
-        print("Build with:")
-        print(_format_command_line(param))
-
-        result = build(param)
-
-        dist = Path("dist")
-        dist.mkdir(exist_ok=True)
-        export_path = output if output else dist / param.filename
-        _export(result, param, export_path, show, screenshot)
+        _build_and_export(build, param, output, show, screenshot)
 
 
 def define_interactive_command(
@@ -117,15 +110,7 @@ def define_interactive_command(
     )
     def command_interactive(output: Path | None, show: bool, screenshot: bool) -> None:
         param = _prompt_param(Param)
-        print("Build with:")
-        print(_format_command_line(param))
-
-        result = build(param)
-
-        dist = Path("dist")
-        dist.mkdir(exist_ok=True)
-        export_path = output if output else dist / param.filename
-        _export(result, param, export_path, show, screenshot)
+        _build_and_export(build, param, output, show, screenshot)
 
 
 def define_app(
@@ -144,6 +129,34 @@ def define_app(
     return main
 
 
+def _build_and_export(
+    build: Callable[[TP], cq.Workplane | cq.Assembly],
+    param: TP,
+    output: Path | None,
+    show: bool,
+    screenshot: bool,
+) -> None:
+    print(_format_annotated_params(param), file=sys.stderr)
+    print(file=sys.stderr)
+    print("Build with:", file=sys.stderr)
+    print(_format_command_line(param), file=sys.stderr)
+
+    result = build(param)
+
+    dist = Path("dist")
+    dist.mkdir(exist_ok=True)
+    export_path = output if output else dist / param.filename
+    _export(result, param, export_path, show, screenshot)
+
+    print("Write to:", file=sys.stderr)
+    # path on stdout with no trailing newline, so it pastes cleanly into a
+    # clipboard; flush before the stderr newline below, since stdout without
+    # a newline stays buffered and would otherwise print after it
+    print(export_path.resolve(), end="")
+    sys.stdout.flush()
+    print(file=sys.stderr)
+
+
 def _export(
     result: cq.Workplane | cq.Assembly,
     param: BuildParam,
@@ -157,6 +170,24 @@ def _export(
         vis.show(result, interact=False, screenshot=f"{export_path}.png")
     if show:
         vis.show(result)
+
+
+def _format_annotated_params(param: BuildParam) -> str:
+    """`name = value  # description`, columns aligned across all fields."""
+    fields = type(param).model_fields
+    values = {name: repr(getattr(param, name)) for name in fields}
+    name_width = max(len(name) for name in fields)
+    value_width = max(len(value) for value in values.values())
+
+    lines = []
+    for name, field_data in fields.items():
+        line = f"{name.ljust(name_width)} = {values[name].ljust(value_width)}"
+        if field_data.description:
+            line += f"  # {field_data.description}"
+        else:
+            line = line.rstrip()
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _format_command_line(param: BuildParam) -> str:
