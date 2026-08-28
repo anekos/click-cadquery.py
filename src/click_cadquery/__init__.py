@@ -41,34 +41,41 @@ def define_options(klass: type[BaseModel]):  # type: ignore
             help="Save a screenshot next to the output file (<output>.png)",
         )(decorated)
 
-        for field_name, field_data in klass.model_fields.items():
-            anot = field_data.annotation
+        return _add_param_options(decorated, klass)
 
-            if typing.get_origin(anot) is Literal:
-                decorated = click.option(
-                    _to_option_name(field_name),
-                    type=click.Choice(list(typing.get_args(anot))),
-                    default=field_data.default,
-                    help=field_data.description,
-                )(decorated)
-                continue
+    return decorator
 
-            # `X | None` — unwrap to X; unset options fall back to the None default
-            anot, _ = _unwrap_optional(field_name, anot)
 
-            assert isinstance(anot, type)
+def _add_param_options(
+    decorated: Callable[..., None], klass: type[BaseModel]
+) -> Callable[..., None]:
+    """Attach one click.option per model field to `decorated`."""
+    for field_name, field_data in klass.model_fields.items():
+        anot = field_data.annotation
 
-            # e.g. @click.option("--width", type=float, default=100.0)
+        if typing.get_origin(anot) is Literal:
             decorated = click.option(
                 _to_option_name(field_name),
-                type=anot,
+                type=click.Choice(list(typing.get_args(anot))),
                 default=field_data.default,
                 help=field_data.description,
             )(decorated)
+            continue
 
-        return decorated
+        # `X | None` — unwrap to X; unset options fall back to the None default
+        anot, _ = _unwrap_optional(field_name, anot)
 
-    return decorator
+        assert isinstance(anot, type)
+
+        # e.g. @click.option("--width", type=float, default=100.0)
+        decorated = click.option(
+            _to_option_name(field_name),
+            type=anot,
+            default=field_data.default,
+            help=field_data.description,
+        )(decorated)
+
+    return decorated
 
 
 class BuildParam(BaseModel):
@@ -113,6 +120,21 @@ def define_interactive_command(
         _build_and_export(build, param, output, show, screenshot)
 
 
+def define_preview_command(
+    group: click.Group,
+    Param: type[TP],
+    preview: Callable[[TP], str],
+    name: str = "preview",
+):
+    """A command taking the same param options as `build` that prints
+    `preview(param)` instead of building — e.g. a partition layout diagram."""
+
+    def command_preview(**kwargs: Any) -> None:
+        click.echo(preview(Param(**kwargs)))
+
+    group.command(name=name)(_add_param_options(command_preview, Param))
+
+
 def define_app(
     Param: type[TP],
     build: Callable[[TP], cq.Workplane | cq.Assembly],
@@ -125,8 +147,58 @@ def define_app(
 
     define_build_command(main, Param, build)
     define_interactive_command(main, Param, build)
+    _define_partition_preview(main, Param)
 
     return main
+
+
+def _define_partition_preview(group: click.Group, Param: type[TP]) -> None:
+    """Auto-register a `partition` preview command when `Param` carries a
+    PartitionExpr field.
+
+    The layout comes from `Param.layout()` when defined; otherwise it is
+    built from the single PartitionExpr field and the conventional
+    `inner_width` / `inner_depth` / `thickness` attributes, centred on the
+    origin. Params providing neither convention are left alone — register a
+    preview yourself with define_preview_command.
+    """
+    from . import partition
+
+    fields = partition.partition_fields(Param)
+    if not fields:
+        return
+
+    def has(name: str) -> bool:
+        return name in Param.model_fields or hasattr(Param, name)
+
+    layout_of: Callable[[TP], partition.Layout]
+    if callable(getattr(Param, "layout", None)):
+
+        def layout_of(param: TP) -> partition.Layout:
+            return param.layout()  # type: ignore[attr-defined]
+    elif len(fields) == 1 and all(
+        has(name) for name in ("inner_width", "inner_depth", "thickness")
+    ):
+        field_name = fields[0]
+
+        def layout_of(param: TP) -> partition.Layout:
+            width: float = param.inner_width  # type: ignore[attr-defined]
+            depth: float = param.inner_depth  # type: ignore[attr-defined]
+            thickness: float = param.thickness  # type: ignore[attr-defined]
+            return partition.solve(
+                partition.parse(getattr(param, field_name)),
+                partition.Rect(-width / 2, -depth / 2, width, depth),
+                thickness,
+            )
+    else:
+        return
+
+    define_preview_command(
+        group,
+        Param,
+        lambda param: partition.preview_text(layout_of(param)),
+        name="partition",
+    )
 
 
 def _build_and_export(

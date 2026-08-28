@@ -127,6 +127,94 @@ The decorated function must accept:
 - `show`: Boolean flag for showing results
 - `screenshot`: Boolean flag for saving a screenshot
 
+### `define_preview_command(group: click.Group, Param: type[BuildParam], preview: Callable[[Param], str], name: str = "preview")`
+
+Adds a command that takes the same param options as `build` but prints
+`preview(param)` instead of building anything.
+
+You rarely need to call this yourself: when the model carries a
+`PartitionExpr` field, `define_app` registers a `partition` preview command
+automatically (see below).
+
+### Partition expressions (`click_cadquery.partition`)
+
+A small language for describing box dividers, so the layout can be passed on
+the command line. The top level splits the width (X) axis; each nested
+`(...)` splits the perpendicular axis:
+
+| Expression | Meaning |
+|---|---|
+| `3` | three equal cells |
+| `3x2` | a 3 x 2 grid |
+| `30,40,*` | 30 mm, 40 mm, then the rest |
+| `1:2:1` | split by weights |
+| `20,*,2*` | 20 mm fixed, the rest split 1:2 |
+| `30(3),*` | a 30 mm column split into 3 rows, plus an undivided column |
+| `1:1(1:1(1:1))` | recursive halving |
+
+Bare numbers are millimetres, `N*` (or `*` = `1*`) are weights sharing the
+space left after fixed cells and dividers, and a lone integer is a count of
+equal cells. Sizes are cell **inner** sizes; a divider of the given thickness
+sits between adjacent cells.
+
+The `PartitionParam` mixin gives a model everything at once — the validated
+`partition` field, `layout()` solved inside the inner rectangle centred on
+the origin, and a validator rejecting params whose partition does not fit.
+It only requires `inner_width`, `inner_depth` and `thickness` on the model:
+
+```python
+from click_cadquery.partition import (
+    PartitionExpr, PartitionParam, partition_field, walls_solid,
+)
+
+class Param(BuildParam, PartitionParam):
+    partition: PartitionExpr = partition_field("2x3")  # default + canonical help
+    ...  # width/depth/thickness fields, inner_* properties
+
+def build(param: Param) -> cq.Workplane:
+    walls = walls_solid(param.layout(), height)  # None when there are no dividers
+    ...
+```
+
+`partition_field(default)` is a `pydantic.Field` carrying the syntax summary
+(`SYNTAX`) as the option help, so the description follows the library when
+the language grows; the default is validated at import time.
+
+The lower-level pieces behind the mixin:
+
+- `parse(text) -> Spec` parses an expression (raising `PartitionError`).
+- `solve(spec, rect, thickness) -> Layout` computes leaf cells and divider
+  walls inside the inner rectangle `rect`.
+- `walls_solid(layout, height) -> cq.Workplane | None` builds the dividers as
+  one solid sitting on Z=0; each wall end is extended by `thickness / 2` so
+  the union with the surrounding shell never merges coincident faces.
+- `render_ascii(layout)` / `describe(layout)` draw a top-view diagram and a
+  per-cell size listing for CLI confirmation (`preview_text(layout)` combines
+  both).
+
+When the model has a `PartitionExpr` field, `define_app` automatically adds a
+`partition` subcommand that prints this preview for the given params. The
+layout is taken from `Param.layout() -> Layout` when the model defines it;
+otherwise it is built from the single `PartitionExpr` field and the
+conventional `inner_width` / `inner_depth` / `thickness` attributes, centred
+on the origin. Models providing neither convention get no automatic command —
+register one yourself with `define_preview_command`.
+
+```console
+$ uv run app partition --partition '30(3),*' --width 120
+```
+
+Preview a layout against explicit dimensions, without any project:
+
+```console
+$ cq-partition '30(3),*' --width 116 --depth 76 --thickness 2
+```
+
+(also available as `python -m click_cadquery.partition`).
+
+See `samples/partition` for a complete example: a partitioned open-top box
+built on the `PartitionParam` mixin.
+
 ### Git Utilities
 
 #### `version_number() -> int`
