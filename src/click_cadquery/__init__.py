@@ -41,34 +41,41 @@ def define_options(klass: type[BaseModel]):  # type: ignore
             help="Save a screenshot next to the output file (<output>.png)",
         )(decorated)
 
-        for field_name, field_data in klass.model_fields.items():
-            anot = field_data.annotation
+        return _add_param_options(decorated, klass)
 
-            if typing.get_origin(anot) is Literal:
-                decorated = click.option(
-                    _to_option_name(field_name),
-                    type=click.Choice(list(typing.get_args(anot))),
-                    default=field_data.default,
-                    help=field_data.description,
-                )(decorated)
-                continue
+    return decorator
 
-            # `X | None` — unwrap to X; unset options fall back to the None default
-            anot, _ = _unwrap_optional(field_name, anot)
 
-            assert isinstance(anot, type)
+def _add_param_options(
+    decorated: Callable[..., None], klass: type[BaseModel]
+) -> Callable[..., None]:
+    """Attach one click.option per model field to `decorated`."""
+    for field_name, field_data in klass.model_fields.items():
+        anot = field_data.annotation
 
-            # e.g. @click.option("--width", type=float, default=100.0)
+        if typing.get_origin(anot) is Literal:
             decorated = click.option(
                 _to_option_name(field_name),
-                type=anot,
+                type=click.Choice(list(typing.get_args(anot))),
                 default=field_data.default,
                 help=field_data.description,
             )(decorated)
+            continue
 
-        return decorated
+        # `X | None` — unwrap to X; unset options fall back to the None default
+        anot, _ = _unwrap_optional(field_name, anot)
 
-    return decorator
+        assert isinstance(anot, type)
+
+        # e.g. @click.option("--width", type=float, default=100.0)
+        decorated = click.option(
+            _to_option_name(field_name),
+            type=anot,
+            default=field_data.default,
+            help=field_data.description,
+        )(decorated)
+
+    return decorated
 
 
 class BuildParam(BaseModel):
@@ -111,6 +118,21 @@ def define_interactive_command(
     def command_interactive(output: Path | None, show: bool, screenshot: bool) -> None:
         param = _prompt_param(Param)
         _build_and_export(build, param, output, show, screenshot)
+
+
+def define_preview_command(
+    group: click.Group,
+    Param: type[TP],
+    preview: Callable[[TP], str],
+    name: str = "preview",
+):
+    """A command taking the same param options as `build` that prints
+    `preview(param)` instead of building — e.g. a partition layout diagram."""
+
+    def command_preview(**kwargs: Any) -> None:
+        click.echo(preview(Param(**kwargs)))
+
+    group.command(name=name)(_add_param_options(command_preview, Param))
 
 
 def define_app(
