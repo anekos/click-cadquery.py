@@ -130,8 +130,11 @@ The decorated function must accept:
 ### `define_preview_command(group: click.Group, Param: type[BuildParam], preview: Callable[[Param], str], name: str = "preview")`
 
 Adds a command that takes the same param options as `build` but prints
-`preview(param)` instead of building anything — e.g. a partition layout
-diagram (see below).
+`preview(param)` instead of building anything.
+
+You rarely need to call this yourself: when the model carries a
+`PartitionExpr` field, `define_app` registers a `partition` preview command
+automatically (see below).
 
 ### Partition expressions (`click_cadquery.partition`)
 
@@ -176,9 +179,22 @@ def build(param: Param) -> cq.Workplane:
   one solid sitting on Z=0; each wall end is extended by `thickness / 2` so
   the union with the surrounding shell never merges coincident faces.
 - `render_ascii(layout)` / `describe(layout)` draw a top-view diagram and a
-  per-cell size listing for CLI confirmation.
+  per-cell size listing for CLI confirmation (`preview_text(layout)` combines
+  both).
 
-Preview a layout from the command line:
+When the model has a `PartitionExpr` field, `define_app` automatically adds a
+`partition` subcommand that prints this preview for the given params. The
+layout is taken from `Param.layout() -> Layout` when the model defines it;
+otherwise it is built from the single `PartitionExpr` field and the
+conventional `inner_width` / `inner_depth` / `thickness` attributes, centred
+on the origin. Models providing neither convention get no automatic command —
+register one yourself with `define_preview_command`.
+
+```console
+$ uv run app partition --partition '30(3),*' --width 120
+```
+
+Preview a layout against explicit dimensions, without any project:
 
 ```console
 $ cq-partition '30(3),*' --width 116 --depth 76 --thickness 2
