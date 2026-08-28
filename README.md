@@ -157,20 +157,30 @@ space left after fixed cells and dividers, and a lone integer is a count of
 equal cells. Sizes are cell **inner** sizes; a divider of the given thickness
 sits between adjacent cells.
 
+The `PartitionParam` mixin gives a model everything at once — the validated
+`partition` field, `layout()` solved inside the inner rectangle centred on
+the origin, and a validator rejecting params whose partition does not fit.
+It only requires `inner_width`, `inner_depth` and `thickness` on the model:
+
 ```python
 from click_cadquery.partition import (
-    PartitionExpr, Rect, parse, solve, walls_solid,
+    PartitionExpr, PartitionParam, partition_field, walls_solid,
 )
 
-class Param(BuildParam):
-    partition: PartitionExpr = "2x3"  # a str field, validated by parsing
-    ...
+class Param(BuildParam, PartitionParam):
+    partition: PartitionExpr = partition_field("2x3")  # default + canonical help
+    ...  # width/depth/thickness fields, inner_* properties
 
 def build(param: Param) -> cq.Workplane:
-    layout = solve(parse(param.partition), Rect(x, y, w, d), thickness)
-    walls = walls_solid(layout, height)  # None when there are no dividers
+    walls = walls_solid(param.layout(), height)  # None when there are no dividers
     ...
 ```
+
+`partition_field(default)` is a `pydantic.Field` carrying the syntax summary
+(`SYNTAX`) as the option help, so the description follows the library when
+the language grows; the default is validated at import time.
+
+The lower-level pieces behind the mixin:
 
 - `parse(text) -> Spec` parses an expression (raising `PartitionError`).
 - `solve(spec, rect, thickness) -> Layout` computes leaf cells and divider
@@ -203,7 +213,7 @@ $ cq-partition '30(3),*' --width 116 --depth 76 --thickness 2
 (also available as `python -m click_cadquery.partition`).
 
 See `samples/partition` for a complete example: a partitioned open-top box
-with a `partition` preview subcommand via `define_preview_command`.
+built on the `PartitionParam` mixin.
 
 ### Git Utilities
 
