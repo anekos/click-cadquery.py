@@ -127,6 +127,68 @@ The decorated function must accept:
 - `show`: Boolean flag for showing results
 - `screenshot`: Boolean flag for saving a screenshot
 
+### `define_preview_command(group: click.Group, Param: type[BuildParam], preview: Callable[[Param], str], name: str = "preview")`
+
+Adds a command that takes the same param options as `build` but prints
+`preview(param)` instead of building anything — e.g. a partition layout
+diagram (see below).
+
+### Partition expressions (`click_cadquery.partition`)
+
+A small language for describing box dividers, so the layout can be passed on
+the command line. The top level splits the width (X) axis; each nested
+`(...)` splits the perpendicular axis:
+
+| Expression | Meaning |
+|---|---|
+| `3` | three equal cells |
+| `3x2` | a 3 x 2 grid |
+| `30,40,*` | 30 mm, 40 mm, then the rest |
+| `1:2:1` | split by weights |
+| `20,*,2*` | 20 mm fixed, the rest split 1:2 |
+| `30(3),*` | a 30 mm column split into 3 rows, plus an undivided column |
+| `1:1(1:1(1:1))` | recursive halving |
+
+Bare numbers are millimetres, `N*` (or `*` = `1*`) are weights sharing the
+space left after fixed cells and dividers, and a lone integer is a count of
+equal cells. Sizes are cell **inner** sizes; a divider of the given thickness
+sits between adjacent cells.
+
+```python
+from click_cadquery.partition import (
+    PartitionExpr, Rect, parse, solve, walls_solid,
+)
+
+class Param(BuildParam):
+    partition: PartitionExpr = "2x3"  # a str field, validated by parsing
+    ...
+
+def build(param: Param) -> cq.Workplane:
+    layout = solve(parse(param.partition), Rect(x, y, w, d), thickness)
+    walls = walls_solid(layout, height)  # None when there are no dividers
+    ...
+```
+
+- `parse(text) -> Spec` parses an expression (raising `PartitionError`).
+- `solve(spec, rect, thickness) -> Layout` computes leaf cells and divider
+  walls inside the inner rectangle `rect`.
+- `walls_solid(layout, height) -> cq.Workplane | None` builds the dividers as
+  one solid sitting on Z=0; each wall end is extended by `thickness / 2` so
+  the union with the surrounding shell never merges coincident faces.
+- `render_ascii(layout)` / `describe(layout)` draw a top-view diagram and a
+  per-cell size listing for CLI confirmation.
+
+Preview a layout from the command line:
+
+```console
+$ cq-partition '30(3),*' --width 116 --depth 76 --thickness 2
+```
+
+(also available as `python -m click_cadquery.partition`).
+
+See `samples/partition` for a complete example: a partitioned open-top box
+with a `partition` preview subcommand via `define_preview_command`.
+
 ### Git Utilities
 
 #### `version_number() -> int`
