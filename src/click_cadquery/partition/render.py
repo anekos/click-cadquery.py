@@ -19,6 +19,11 @@ def describe(layout: Layout) -> str:
     return "\n".join(lines)
 
 
+def preview_text(layout: Layout) -> str:
+    """Diagram plus per-cell sizes — the standard CLI confirmation output."""
+    return f"{render_ascii(layout)}\n\n{describe(layout)}"
+
+
 def render_ascii(layout: Layout, width: int = 48) -> str:
     """Top view of the layout, `width` characters wide inside the border.
 

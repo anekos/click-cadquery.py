@@ -20,24 +20,47 @@ Preview a layout from the command line:
     cq-partition '30(3),*' --width 116 --depth 76 --thickness 2
 """
 
-from typing import Annotated
+from typing import Any, Self
 
-from pydantic import AfterValidator
+from pydantic import BaseModel, GetCoreSchemaHandler
+from pydantic_core import core_schema
 
 from .geometry import walls_solid
 from .model import Axis, Cell, Layout, PartitionError, Rect, Spec, Wall
 from .parser import parse
-from .render import describe, render_ascii
+from .render import describe, preview_text, render_ascii
 from .solver import solve
 
 
-def _validated(value: str) -> str:
-    parse(value)
-    return value
+class PartitionExpr(str):
+    """A `str` that must parse as a partition expression.
+
+    Construction validates, so both pydantic fields and click options
+    reject invalid expressions with the parser's error message.
+    """
+
+    def __new__(cls, value: str) -> Self:
+        parse(value)
+        return super().__new__(cls, value)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        return core_schema.no_info_after_validator_function(
+            cls, core_schema.str_schema()
+        )
 
 
-PartitionExpr = Annotated[str, AfterValidator(_validated)]
-"""A `str` pydantic field type that must parse as a partition expression."""
+def partition_fields(Param: type[BaseModel]) -> list[str]:
+    """Names of `Param` fields declared as PartitionExpr."""
+    return [
+        name
+        for name, field in Param.model_fields.items()
+        if isinstance(field.annotation, type)
+        and issubclass(field.annotation, PartitionExpr)
+    ]
+
 
 __all__ = [
     "Axis",
@@ -50,6 +73,8 @@ __all__ = [
     "Wall",
     "describe",
     "parse",
+    "partition_fields",
+    "preview_text",
     "render_ascii",
     "solve",
     "walls_solid",

@@ -147,8 +147,58 @@ def define_app(
 
     define_build_command(main, Param, build)
     define_interactive_command(main, Param, build)
+    _define_partition_preview(main, Param)
 
     return main
+
+
+def _define_partition_preview(group: click.Group, Param: type[TP]) -> None:
+    """Auto-register a `partition` preview command when `Param` carries a
+    PartitionExpr field.
+
+    The layout comes from `Param.layout()` when defined; otherwise it is
+    built from the single PartitionExpr field and the conventional
+    `inner_width` / `inner_depth` / `thickness` attributes, centred on the
+    origin. Params providing neither convention are left alone — register a
+    preview yourself with define_preview_command.
+    """
+    from . import partition
+
+    fields = partition.partition_fields(Param)
+    if not fields:
+        return
+
+    def has(name: str) -> bool:
+        return name in Param.model_fields or hasattr(Param, name)
+
+    layout_of: Callable[[TP], partition.Layout]
+    if callable(getattr(Param, "layout", None)):
+
+        def layout_of(param: TP) -> partition.Layout:
+            return param.layout()  # type: ignore[attr-defined]
+    elif len(fields) == 1 and all(
+        has(name) for name in ("inner_width", "inner_depth", "thickness")
+    ):
+        field_name = fields[0]
+
+        def layout_of(param: TP) -> partition.Layout:
+            width: float = param.inner_width  # type: ignore[attr-defined]
+            depth: float = param.inner_depth  # type: ignore[attr-defined]
+            thickness: float = param.thickness  # type: ignore[attr-defined]
+            return partition.solve(
+                partition.parse(getattr(param, field_name)),
+                partition.Rect(-width / 2, -depth / 2, width, depth),
+                thickness,
+            )
+    else:
+        return
+
+    define_preview_command(
+        group,
+        Param,
+        lambda param: partition.preview_text(layout_of(param)),
+        name="partition",
+    )
 
 
 def _build_and_export(

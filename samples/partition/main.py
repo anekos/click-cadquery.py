@@ -1,16 +1,14 @@
 import cadquery as cq
 from pydantic import Field, model_validator
 
-from click_cadquery import BuildParam, define_app, define_preview_command
+from click_cadquery import BuildParam, define_app
 from click_cadquery.git import version_number as ver
 from click_cadquery.partition import (
     Layout,
     PartitionError,
     PartitionExpr,
     Rect,
-    describe,
     parse,
-    render_ascii,
     solve,
     walls_solid,
 )
@@ -27,7 +25,7 @@ class BoxParam(BuildParam):
         default=2.0, description="Wall, floor and divider thickness"
     )
     partition: PartitionExpr = Field(
-        default="2x3",
+        default=PartitionExpr("2x3"),
         description="Divider layout: N | NxM | '30,40,*' | '1:2:1' | '30(3),*'",
     )
 
@@ -90,13 +88,9 @@ def build_box(param: BoxParam) -> cq.Workplane:
     return result
 
 
-def preview_partition(param: BoxParam) -> str:
-    layout = param.layout()
-    return f"{render_ascii(layout)}\n\n{describe(layout)}"
-
-
+# define_app registers the `partition` preview subcommand automatically,
+# since BoxParam carries a PartitionExpr field and a layout() method.
 main = define_app(BoxParam, build_box)
-define_preview_command(main, BoxParam, preview_partition, name="partition")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@
 
 An open-top box whose dividers are described by a partition expression
 (`click_cadquery.partition`). See the library README for the syntax.
+The `partition` preview subcommand is registered automatically by
+`define_app` because the model carries a `PartitionExpr` field.
 
 ```console
 $ make add_library            # install click-cadquery into the venv
