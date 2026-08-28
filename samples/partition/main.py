@@ -4,12 +4,9 @@ from pydantic import Field, model_validator
 from click_cadquery import BuildParam, define_app
 from click_cadquery.git import version_number as ver
 from click_cadquery.partition import (
-    Layout,
-    PartitionError,
     PartitionExpr,
-    Rect,
-    parse,
-    solve,
+    PartitionParam,
+    partition_field,
     walls_solid,
 )
 
@@ -17,17 +14,16 @@ from click_cadquery.partition import (
 FILENAME_SAFE = str.maketrans({"*": "@", ",": "+", "(": "[", ")": "]", ":": "="})
 
 
-class BoxParam(BuildParam):
+# PartitionParam supplies the partition field, layout() (solved inside the
+# inner rectangle) and the does-it-fit validation.
+class BoxParam(BuildParam, PartitionParam):
     width: float = Field(default=120.0, description="Outer width of the box")
     depth: float = Field(default=80.0, description="Outer depth of the box")
     height: float = Field(default=40.0, description="Outer height (the top is open)")
     thickness: float = Field(
         default=2.0, description="Wall, floor and divider thickness"
     )
-    partition: PartitionExpr = Field(
-        default=PartitionExpr("2x3"),
-        description="Divider layout: N | NxM | '30,40,*' | '1:2:1' | '30(3),*'",
-    )
+    partition: PartitionExpr = partition_field("2x3")
 
     @property
     def inner_width(self) -> float:
@@ -41,26 +37,10 @@ class BoxParam(BuildParam):
     def inner_height(self) -> float:
         return self.height - self.thickness
 
-    def layout(self) -> Layout:
-        return solve(
-            parse(self.partition),
-            Rect(
-                -self.inner_width / 2,
-                -self.inner_depth / 2,
-                self.inner_width,
-                self.inner_depth,
-            ),
-            self.thickness,
-        )
-
     @model_validator(mode="after")
-    def partition_must_fit(self) -> "BoxParam":
+    def walls_must_fit(self) -> "BoxParam":
         if min(self.inner_width, self.inner_depth, self.inner_height) <= 0:
             raise ValueError("the walls do not fit into the outer size")
-        try:
-            self.layout()
-        except PartitionError as e:
-            raise ValueError(f"the partition does not fit: {e}") from e
         return self
 
     @property

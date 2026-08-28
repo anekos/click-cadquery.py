@@ -1,13 +1,17 @@
 import cadquery as cq
 import pytest
 from click.testing import CliRunner
+from pydantic import ValidationError
 
 from click_cadquery import BuildParam, define_app
 from click_cadquery.partition import (
+    SYNTAX,
     PartitionError,
     PartitionExpr,
+    PartitionParam,
     Rect,
     parse,
+    partition_field,
     partition_fields,
     solve,
 )
@@ -34,6 +38,54 @@ class Param(BuildParam):
 
 def build(param: Param) -> cq.Workplane:
     return cq.Workplane("XY").box(1, 1, 1)
+
+
+class MixinParam(BuildParam, PartitionParam):
+    width: float = 100.0
+    depth: float = 60.0
+    thickness: float = 2.0
+    partition: PartitionExpr = partition_field("2x3")
+
+    @property
+    def inner_width(self) -> float:
+        return self.width - 2 * self.thickness
+
+    @property
+    def inner_depth(self) -> float:
+        return self.depth - 2 * self.thickness
+
+    @property
+    def filename(self) -> str:
+        return "mixin.stl"
+
+
+def test_partition_field_carries_the_canonical_description():
+    field = MixinParam.model_fields["partition"]
+    assert field.description == f"Divider layout: {SYNTAX}"
+    assert isinstance(field.default, PartitionExpr)
+
+
+def test_partition_field_rejects_an_invalid_default_at_definition_time():
+    with pytest.raises(PartitionError):
+        partition_field("30,")
+
+
+def test_partition_param_provides_the_layout():
+    layout = MixinParam().layout()
+    assert len(layout.cells) == 6
+    assert layout.rect == Rect(-48.0, -28.0, 96.0, 56.0)
+
+
+def test_partition_param_rejects_layouts_that_do_not_fit():
+    with pytest.raises(ValidationError, match="does not fit"):
+        MixinParam(partition="200,*")
+
+
+def test_partition_param_layout_drives_the_auto_preview():
+    app = define_app(MixinParam, build)
+    result = CliRunner().invoke(app, ["partition"])
+    assert result.exit_code == 0
+    assert "[6]" in result.output
 
 
 def test_partition_expr_validates_on_construction():

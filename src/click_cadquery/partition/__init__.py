@@ -20,9 +20,9 @@ Preview a layout from the command line:
     cq-partition '30(3),*' --width 116 --depth 76 --thickness 2
 """
 
-from typing import Any, Self
+from typing import Any, Self, cast
 
-from pydantic import BaseModel, GetCoreSchemaHandler
+from pydantic import BaseModel, Field, GetCoreSchemaHandler, model_validator
 from pydantic_core import core_schema
 
 from .geometry import walls_solid
@@ -30,6 +30,9 @@ from .model import Axis, Cell, Layout, PartitionError, Rect, Spec, Wall
 from .parser import parse
 from .render import describe, preview_text, render_ascii
 from .solver import solve
+
+SYNTAX = "N | NxM | '30,40,*' | '1:2:1' | '30(3),*' (nesting flips the axis)"
+"""One-line syntax summary, kept in sync with the parser."""
 
 
 class PartitionExpr(str):
@@ -52,6 +55,55 @@ class PartitionExpr(str):
         )
 
 
+def partition_field(default: str = "1", description: str | None = None) -> Any:
+    """A pydantic Field for a PartitionExpr, with the canonical syntax help.
+
+    The default is validated right here, so a typo fails at import time.
+    """
+    return Field(
+        default=PartitionExpr(default),
+        description=description or f"Divider layout: {SYNTAX}",
+    )
+
+
+class PartitionParam(BaseModel):
+    """Mixin for build params: a `partition` field plus the standard layout.
+
+    The concrete model must provide `inner_width`, `inner_depth` and
+    `thickness` (as fields or properties); `layout()` then solves the
+    partition inside the inner rectangle centred on the origin, and a
+    validator rejects params whose partition does not fit. Override the
+    field to change the default: `partition: PartitionExpr =
+    partition_field("2x3")`.
+    """
+
+    partition: PartitionExpr = partition_field()
+
+    def layout(self) -> Layout:
+        # The inner sizes come from the concrete model, as fields or
+        # properties; declaring them here would turn them into pydantic
+        # fields, so they stay undeclared.
+        param = cast(Any, self)
+        return solve(
+            parse(self.partition),
+            Rect(
+                -param.inner_width / 2,
+                -param.inner_depth / 2,
+                param.inner_width,
+                param.inner_depth,
+            ),
+            param.thickness,
+        )
+
+    @model_validator(mode="after")
+    def _partition_must_fit(self) -> Self:
+        try:
+            self.layout()
+        except PartitionError as e:
+            raise ValueError(f"the partition does not fit: {e}") from e
+        return self
+
+
 def partition_fields(Param: type[BaseModel]) -> list[str]:
     """Names of `Param` fields declared as PartitionExpr."""
     return [
@@ -63,16 +115,19 @@ def partition_fields(Param: type[BaseModel]) -> list[str]:
 
 
 __all__ = [
+    "SYNTAX",
     "Axis",
     "Cell",
     "Layout",
     "PartitionError",
     "PartitionExpr",
+    "PartitionParam",
     "Rect",
     "Spec",
     "Wall",
     "describe",
     "parse",
+    "partition_field",
     "partition_fields",
     "preview_text",
     "render_ascii",
