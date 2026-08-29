@@ -62,6 +62,15 @@ python main.py build --width 150 --height 80 --depth 50 --name my-case --show
 python main.py build --width 150 --height 80 --depth 50 --name my-case --screenshot
 ```
 
+Every build also dumps its parameters as JSON next to the output file, and
+`--json` reads such a dump back as defaults — options given explicitly on
+the command line still win:
+
+```bash
+python main.py build dist/case.stl --width 150      # writes dist/case.json
+python main.py build --json dist/case.json --width 160   # same params, wider
+```
+
 ## API Reference
 
 ### `define_app(Param: type[BuildParam], build: Callable[[Param], cq.Workplane]) -> click.Group`
@@ -71,7 +80,8 @@ generated from `Param`'s fields, plus an `interactive` command that prompts
 for each field one at a time, both wired to `build`, with export to `dist/`
 plus `--show`/`--screenshot` handled automatically. Alongside the exported
 file, `Param` is also dumped as JSON next to it (same path, `.json`
-extension).
+extension), and every command accepts `--json <file>` to read such a dump
+back as defaults.
 
 **Parameters:**
 - `Param`: A `BuildParam` subclass whose fields become CLI options
@@ -99,7 +109,8 @@ prompts for each of `Param`'s fields one at a time instead of reading them
 from CLI options. If the collected values fail Pydantic validation, only
 the field(s) implicated by the error are re-prompted (a model-level
 validation error re-prompts every field, since no single field can be
-blamed).
+blamed). `--json <file>` seeds the prompt defaults from a previous build's
+JSON dump.
 
 ### `define_options(klass: type[BaseModel])`
 
@@ -119,6 +130,10 @@ directly for manually composed multi-command CLIs (see `samples/multi`).
 - Automatically adds `--show` flag for showing results
 - Automatically adds `--screenshot` flag for saving a screenshot next to the
   output file (`<output>.png`)
+- Automatically adds a `--json <file>` option that reads defaults from a
+  previous build's JSON dump; options given explicitly on the command line
+  override the JSON values, and JSON keys that are not model fields are
+  ignored
 
 **Function signature requirements:**
 The decorated function must accept:
