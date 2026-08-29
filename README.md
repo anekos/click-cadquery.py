@@ -179,12 +179,17 @@ It only requires `inner_width`, `inner_depth` and `thickness` on the model:
 
 ```python
 from click_cadquery.partition import (
-    PartitionExpr, PartitionParam, partition_field, walls_solid,
+    PartitionExpr,
+    PartitionParam,
+    partition_field,
+    walls_solid,
 )
+
 
 class Param(BuildParam, PartitionParam):
     partition: PartitionExpr = partition_field("2x3")  # default + canonical help
     ...  # width/depth/thickness fields, inner_* properties
+
 
 def build(param: Param) -> cq.Workplane:
     walls = walls_solid(param.layout(), height)  # None when there are no dividers
