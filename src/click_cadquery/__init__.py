@@ -1,3 +1,5 @@
+import functools
+import json
 import shlex
 import sys
 import types
@@ -9,9 +11,11 @@ from typing import Any, Literal, TypeVar
 import cadquery as cq
 import click
 from cadquery import vis
+from click.core import ParameterSource
 from pydantic import BaseModel, ValidationError
 
 TypePath = click.types.Path(path_type=Path)
+TypeExistingFile = click.types.Path(exists=True, dir_okay=False, path_type=Path)
 T = TypeVar("T", bound=BaseModel)
 
 # (param, output, show, screenshot)
@@ -49,7 +53,29 @@ def define_options(klass: type[BaseModel]):  # type: ignore
 def _add_param_options(
     decorated: Callable[..., None], klass: type[BaseModel]
 ) -> Callable[..., None]:
-    """Attach one click.option per model field to `decorated`."""
+    """Attach one click.option per model field to `decorated`, plus a
+    `--json` option that reads defaults from a previous build's JSON dump
+    (options given explicitly on the command line still win)."""
+    inner = decorated
+
+    # functools.wraps carries over click params already attached to `inner`
+    # (e.g. output/--show/--screenshot in define_options)
+    @functools.wraps(inner)
+    def with_json_defaults(json_file: Path | None, **kwargs: Any) -> None:
+        if json_file is not None:
+            ctx = click.get_current_context()
+            for name, value in _read_param_json(json_file, klass).items():
+                if ctx.get_parameter_source(name) is ParameterSource.DEFAULT:
+                    kwargs[name] = value
+        return inner(**kwargs)
+
+    decorated = click.option(
+        "--json",
+        "json_file",
+        type=TypeExistingFile,
+        help="Read defaults from a previous build's JSON dump (explicit options win)",
+    )(with_json_defaults)
+
     for field_name, field_data in klass.model_fields.items():
         anot = field_data.annotation
 
@@ -76,6 +102,15 @@ def _add_param_options(
         )(decorated)
 
     return decorated
+
+
+def _read_param_json(json_path: Path, klass: type[BaseModel]) -> dict[str, Any]:
+    """Field values from a previous build's JSON dump; keys that are not
+    fields of `klass` are ignored."""
+    data = json.loads(json_path.read_text())
+    if not isinstance(data, dict):
+        raise click.UsageError(f"{json_path}: expected a JSON object of parameters")
+    return {name: data[name] for name in klass.model_fields if name in data}
 
 
 class BuildParam(BaseModel):
@@ -115,8 +150,17 @@ def define_interactive_command(
         is_flag=True,
         help="Save a screenshot next to the output file (<output>.png)",
     )
-    def command_interactive(output: Path | None, show: bool, screenshot: bool) -> None:
-        param = _prompt_param(Param)
+    @click.option(
+        "--json",
+        "json_file",
+        type=TypeExistingFile,
+        help="Read prompt defaults from a previous build's JSON dump",
+    )
+    def command_interactive(
+        output: Path | None, show: bool, screenshot: bool, json_file: Path | None
+    ) -> None:
+        overrides = _read_param_json(json_file, Param) if json_file else {}
+        param = _prompt_param(Param, overrides)
         _build_and_export(build, param, output, show, screenshot)
 
 
@@ -308,9 +352,11 @@ def _prompt_for_field(field_name: str, field_data: Any, current: Any) -> Any:
     return click.prompt(label, default=current, type=anot)
 
 
-def _prompt_param(Param: type[TP]) -> TP:
+def _prompt_param(Param: type[TP], overrides: dict[str, Any] | None = None) -> TP:
     fields = Param.model_fields
-    values: dict[str, Any] = {name: data.default for name, data in fields.items()}
+    values: dict[str, Any] = {
+        name: (overrides or {}).get(name, data.default) for name, data in fields.items()
+    }
     pending = list(fields.keys())
 
     while True:
