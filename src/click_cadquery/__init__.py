@@ -2,6 +2,7 @@ import functools
 import json
 import shlex
 import sys
+import tomllib
 import types
 import typing
 from collections.abc import Callable
@@ -179,6 +180,33 @@ def define_preview_command(
     group.command(name=name)(_add_param_options(command_preview, Param))
 
 
+def define_info_command(
+    group: click.Group,
+    Param: type[TP],
+    build: Callable[[TP], cq.Workplane | cq.Assembly],
+    name: str = "info",
+):
+    """A command for project-viewer tooling: writes a JSON description of
+    `Param`'s fields (plus the project title/description from `pyproject.toml`
+    when present) to OUTPUT, and a screenshot of `build(Param())` (all
+    defaults) next to it as OUTPUT with a `.png` suffix."""
+
+    @group.command(name=name)
+    @click.argument("output", type=TypePath, required=False)
+    def command_info(output: Path | None) -> None:
+        info_path = output if output else Path("dist") / ".project.json"
+        info_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path = info_path.with_suffix(".png")
+
+        param = Param()
+        model_path = info_path.with_suffix(Path(param.filename).suffix)
+        info_path.write_text(json.dumps(_model_info(Param), indent=2))
+
+        result = build(param)
+        result.export(str(model_path))
+        vis.show(result, interact=False, screenshot=str(image_path))
+
+
 def define_app(
     Param: type[TP],
     build: Callable[[TP], cq.Workplane | cq.Assembly],
@@ -191,9 +219,65 @@ def define_app(
 
     define_build_command(main, Param, build)
     define_interactive_command(main, Param, build)
+    define_info_command(main, Param, build)
     _define_partition_preview(main, Param)
 
     return main
+
+
+def _model_info(Param: type[TP]) -> dict[str, Any]:
+    """Project-viewer JSON: title/description from `pyproject.toml` (cwd)
+    when present, the default export filename, and a schema entry per
+    field."""
+    info: dict[str, Any] = dict(_project_meta(Path.cwd()))
+    info["filename"] = Param().filename
+    info["params"] = [
+        _field_info(name, field_data) for name, field_data in Param.model_fields.items()
+    ]
+    return info
+
+
+def _project_meta(directory: Path) -> dict[str, Any]:
+    """`{"title": ..., "description": ...}` from `directory/pyproject.toml`'s
+    `[project]` table; keys are omitted when absent, `{}` when there is no
+    pyproject.toml."""
+    pyproject = directory / "pyproject.toml"
+    if not pyproject.is_file():
+        return {}
+
+    project = tomllib.loads(pyproject.read_text()).get("project", {})
+    meta = {}
+    if "name" in project:
+        meta["title"] = project["name"]
+    if "description" in project:
+        meta["description"] = project["description"]
+    return meta
+
+
+def _field_info(field_name: str, field_data: Any) -> dict[str, Any]:
+    """`{"name", "type", "default", "description"?, "choices"? | "optional"?}`
+    for one `Param` field — the same type-unwrapping `_add_param_options`
+    uses to build CLI options."""
+    anot = field_data.annotation
+    entry: dict[str, Any] = {"name": field_name}
+
+    if typing.get_origin(anot) is Literal:
+        choices = typing.get_args(anot)
+        entry["type"] = type(choices[0]).__name__
+        entry["default"] = field_data.default
+        if field_data.description:
+            entry["description"] = field_data.description
+        entry["choices"] = list(choices)
+        return entry
+
+    anot, optional = _unwrap_optional(field_name, anot)
+    entry["type"] = anot.__name__
+    entry["default"] = field_data.default
+    if field_data.description:
+        entry["description"] = field_data.description
+    if optional:
+        entry["optional"] = True
+    return entry
 
 
 def _define_partition_preview(group: click.Group, Param: type[TP]) -> None:
