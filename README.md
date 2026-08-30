@@ -60,6 +60,7 @@ This automatically creates a CLI with the following options:
 ```bash
 python main.py build --width 150 --height 80 --depth 50 --name my-case --show
 python main.py build --width 150 --height 80 --depth 50 --name my-case --screenshot
+python main.py build --width 150 --height 80 --depth 50 --name my-case --inline-show
 ```
 
 Every build also dumps its parameters as JSON next to the output file, and
@@ -78,10 +79,10 @@ python main.py build --json dist/case.json --width 160   # same params, wider
 Builds a complete CLI (as used in the Quick Start above): a `build` command
 generated from `Param`'s fields, plus an `interactive` command that prompts
 for each field one at a time, both wired to `build`, with export to `dist/`
-plus `--show`/`--screenshot` handled automatically. Alongside the exported
-file, `Param` is also dumped as JSON next to it (same path, `.json`
-extension), and every command accepts `--json <file>` to read such a dump
-back as defaults. It also registers an `info` command (see below).
+plus `--show`/`--screenshot`/`--inline-show` handled automatically. Alongside
+the exported file, `Param` is also dumped as JSON next to it (same path,
+`.json` extension), and every command accepts `--json <file>` to read such a
+dump back as defaults. It also registers an `info` command (see below).
 
 **Parameters:**
 - `Param`: A `BuildParam` subclass whose fields become CLI options
@@ -130,6 +131,13 @@ directly for manually composed multi-command CLIs (see `samples/multi`).
 - Automatically adds `--show` flag for showing results
 - Automatically adds `--screenshot` flag for saving a screenshot next to the
   output file (`<output>.png`)
+- Automatically adds `--inline-show` flag for displaying a screenshot inline
+  in the terminal via the [kitty graphics
+  protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) (written to
+  stderr, so stdout stays clean for the exported path). Reuses the
+  `--screenshot` file when both are given; otherwise renders to a temporary
+  file that is deleted right after display. Scaled to fit the terminal's
+  current width so a high-resolution render doesn't overflow it.
 - Automatically adds a `--json <file>` option that reads defaults from a
   previous build's JSON dump; options given explicitly on the command line
   override the JSON values, and JSON keys that are not model fields are
@@ -141,6 +149,7 @@ The decorated function must accept:
 - `output`: Optional Path for output file
 - `show`: Boolean flag for showing results
 - `screenshot`: Boolean flag for saving a screenshot
+- `inline_show`: Boolean flag for displaying a screenshot inline in the terminal
 
 ### `define_info_command(group: click.Group, Param: type[BuildParam], build: Callable[[Param], cq.Workplane], name: str = "info")`
 
