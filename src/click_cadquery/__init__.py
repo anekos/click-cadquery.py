@@ -1,13 +1,17 @@
+import base64
 import functools
 import json
+import os
 import shlex
+import shutil
 import sys
+import tempfile
 import tomllib
 import types
 import typing
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import IO, Any, Literal, TypeVar
 
 import cadquery as cq
 import click
@@ -19,8 +23,8 @@ TypePath = click.types.Path(path_type=Path)
 TypeExistingFile = click.types.Path(exists=True, dir_okay=False, path_type=Path)
 T = TypeVar("T", bound=BaseModel)
 
-# (param, output, show, screenshot)
-CommandFunction = Callable[[T, Path | None, bool, bool], None]
+# (param, output, show, screenshot, inline_show)
+CommandFunction = Callable[[T, Path | None, bool, bool, bool], None]
 
 
 def define_options(klass: type[BaseModel]):  # type: ignore
@@ -30,10 +34,18 @@ def define_options(klass: type[BaseModel]):  # type: ignore
 
     def decorator(fn: CommandFunction):  # type: ignore
         def decorated(
-            output: Path | None, show: bool, screenshot: bool, **kwargs: Any
+            output: Path | None,
+            show: bool,
+            screenshot: bool,
+            inline_show: bool,
+            **kwargs: Any,
         ) -> None:
             return fn(  # type: ignore
-                param=klass(**kwargs), output=output, show=show, screenshot=screenshot
+                param=klass(**kwargs),
+                output=output,
+                show=show,
+                screenshot=screenshot,
+                inline_show=inline_show,
             )
 
         decorated = click.argument("output", type=TypePath, required=False)(decorated)
@@ -44,6 +56,11 @@ def define_options(klass: type[BaseModel]):  # type: ignore
             "--screenshot",
             is_flag=True,
             help="Save a screenshot next to the output file (<output>.png)",
+        )(decorated)
+        decorated = click.option(
+            "--inline-show",
+            is_flag=True,
+            help="Display a screenshot inline in the terminal (kitty graphics protocol)",
         )(decorated)
 
         return _add_param_options(decorated, klass)
@@ -60,7 +77,7 @@ def _add_param_options(
     inner = decorated
 
     # functools.wraps carries over click params already attached to `inner`
-    # (e.g. output/--show/--screenshot in define_options)
+    # (e.g. output/--show/--screenshot/--inline-show in define_options)
     @functools.wraps(inner)
     def with_json_defaults(json_file: Path | None, **kwargs: Any) -> None:
         if json_file is not None:
@@ -132,9 +149,13 @@ def define_build_command(
     @group.command(name=name)
     @define_options(Param)
     def command_build(
-        output: Path | None, param: TP, show: bool, screenshot: bool
+        output: Path | None,
+        param: TP,
+        show: bool,
+        screenshot: bool,
+        inline_show: bool,
     ) -> None:
-        _build_and_export(build, param, output, show, screenshot)
+        _build_and_export(build, param, output, show, screenshot, inline_show)
 
 
 def define_interactive_command(
@@ -152,17 +173,26 @@ def define_interactive_command(
         help="Save a screenshot next to the output file (<output>.png)",
     )
     @click.option(
+        "--inline-show",
+        is_flag=True,
+        help="Display a screenshot inline in the terminal (kitty graphics protocol)",
+    )
+    @click.option(
         "--json",
         "json_file",
         type=TypeExistingFile,
         help="Read prompt defaults from a previous build's JSON dump",
     )
     def command_interactive(
-        output: Path | None, show: bool, screenshot: bool, json_file: Path | None
+        output: Path | None,
+        show: bool,
+        screenshot: bool,
+        inline_show: bool,
+        json_file: Path | None,
     ) -> None:
         overrides = _read_param_json(json_file, Param) if json_file else {}
         param = _prompt_param(Param, overrides)
-        _build_and_export(build, param, output, show, screenshot)
+        _build_and_export(build, param, output, show, screenshot, inline_show)
 
 
 def define_preview_command(
@@ -335,6 +365,7 @@ def _build_and_export(
     output: Path | None,
     show: bool,
     screenshot: bool,
+    inline_show: bool,
 ) -> None:
     print(_format_annotated_params(param), file=sys.stderr)
     print(file=sys.stderr)
@@ -346,7 +377,7 @@ def _build_and_export(
     dist = Path("dist")
     dist.mkdir(exist_ok=True)
     export_path = output if output else dist / param.filename
-    _export(result, param, export_path, show, screenshot)
+    _export(result, param, export_path, show, screenshot, inline_show)
 
     print("Write to:", file=sys.stderr)
     # path on stdout with no trailing newline, so it pastes cleanly into a
@@ -363,13 +394,52 @@ def _export(
     export_path: Path,
     show: bool,
     screenshot: bool,
+    inline_show: bool,
 ) -> None:
     result.export(str(export_path))
     export_path.with_suffix(".json").write_text(param.model_dump_json(indent=2))
+
     if screenshot:
-        vis.show(result, interact=False, screenshot=f"{export_path}.png")
+        image_path = Path(f"{export_path}.png")
+        vis.show(result, interact=False, screenshot=str(image_path))
+        if inline_show:
+            _display_kitty_image(image_path)
+    elif inline_show:
+        fd, name = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        image_path = Path(name)
+        try:
+            vis.show(result, interact=False, screenshot=str(image_path))
+            _display_kitty_image(image_path)
+        finally:
+            image_path.unlink(missing_ok=True)
+
     if show:
         vis.show(result)
+
+
+def _display_kitty_image(
+    image_path: Path, stream: IO[str] = sys.stderr, columns: int | None = None
+) -> None:
+    """Write `image_path`'s bytes to `stream` as kitty graphics protocol APC
+    sequences (base64, chunked to 4096 bytes per the protocol's limit).
+    Scaled to `columns` terminal columns (aspect ratio preserved by the
+    terminal) — the terminal's current width when not given, so a
+    high-resolution render doesn't overflow it."""
+    if columns is None:
+        columns = shutil.get_terminal_size().columns
+
+    payload = base64.b64encode(image_path.read_bytes())
+    chunk_size = 4096
+    chunks = [payload[i : i + chunk_size] for i in range(0, len(payload), chunk_size)]
+    if not chunks:
+        chunks = [b""]
+
+    for i, chunk in enumerate(chunks):
+        more = 0 if i == len(chunks) - 1 else 1
+        controls = f"a=T,f=100,c={columns},m={more}" if i == 0 else f"m={more}"
+        stream.write(f"\x1b_G{controls};{chunk.decode('ascii')}\x1b\\")
+    stream.flush()
 
 
 def _format_annotated_params(param: BuildParam) -> str:
