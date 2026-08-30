@@ -81,7 +81,7 @@ for each field one at a time, both wired to `build`, with export to `dist/`
 plus `--show`/`--screenshot` handled automatically. Alongside the exported
 file, `Param` is also dumped as JSON next to it (same path, `.json`
 extension), and every command accepts `--json <file>` to read such a dump
-back as defaults.
+back as defaults. It also registers an `info` command (see below).
 
 **Parameters:**
 - `Param`: A `BuildParam` subclass whose fields become CLI options
@@ -141,6 +141,30 @@ The decorated function must accept:
 - `output`: Optional Path for output file
 - `show`: Boolean flag for showing results
 - `screenshot`: Boolean flag for saving a screenshot
+
+### `define_info_command(group: click.Group, Param: type[BuildParam], build: Callable[[Param], cq.Workplane], name: str = "info")`
+
+Adds an `info [OUTPUT]` command for project-viewer tooling: it builds
+`Param()` (i.e. all field defaults) once and writes three files next to
+`OUTPUT` (`dist/.project.json` by default) — a JSON description of `Param`
+at `OUTPUT` itself, the built model with `OUTPUT`'s suffix swapped for
+`Param()`'s own extension (e.g. `.stl`), and a screenshot with a `.png`
+suffix.
+
+```bash
+python main.py info                  # dist/.project.{json,stl,png}
+python main.py info dist/preview.json   # dist/preview.{json,stl,png}
+```
+
+The JSON has a `filename` key (`Param()`'s default export filename) and a
+`params` array with one entry per field (`name`, `type`, `default`, and
+`description` when the field has one; `choices` for `Literal` fields,
+`optional: true` for `X | None` fields). When a `pyproject.toml` is present
+in the current directory, its `[project]` `name`/`description` are copied in
+as `title`/`description`; both are omitted otherwise.
+
+`define_app` registers this automatically — call it directly only when
+composing commands by hand (see `samples/multi`).
 
 ### `define_preview_command(group: click.Group, Param: type[BuildParam], preview: Callable[[Param], str], name: str = "preview")`
 
