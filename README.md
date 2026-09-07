@@ -72,6 +72,16 @@ python main.py build dist/case.stl --width 150      # writes dist/case.json
 python main.py build --json dist/case.json --width 160   # same params, wider
 ```
 
+Numeric options (and the interactive prompts) also accept simple arithmetic
+expressions, evaluated with
+[simpleeval](https://github.com/danthedeckie/simpleeval) (no names or
+function calls). An expression for an `int` field must come out as a whole
+number:
+
+```bash
+python main.py build --width 100/3 --height '(25+4)*2' --depth 45.5*2
+```
+
 ## API Reference
 
 ### `define_app(Param: type[BuildParam], build: Callable[[Param], cq.Workplane]) -> click.Group`
@@ -125,6 +135,9 @@ directly for manually composed multi-command CLIs (see `samples/multi`).
 **Generated CLI signature:**
 - Each model field becomes a `--field-name` option
 - Field types are preserved for Click type validation
+- `int`/`float` options also accept simple arithmetic expressions
+  (evaluated with [simpleeval](https://github.com/danthedeckie/simpleeval),
+  e.g. `--width 100/3`); an `int` result must be a whole number
 - `X | None` fields are parsed as `X`; omitting the option yields `None`
 - Field defaults and descriptions are used for CLI help
 - Automatically adds `output` argument for file output

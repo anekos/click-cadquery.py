@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "click>=8.2.1",
     "pydantic>=2.11.7",
+    "simpleeval>=1.0.7",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -43,6 +44,11 @@ files = ["src"]
 module = ["cadquery.*", "casadi.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
+
+# simpleeval ships no py.typed marker.
+[[tool.mypy.overrides]]
+module = ["simpleeval"]
+ignore_missing_imports = true
 
 [build-system]
 requires = ["uv_build>=0.8.3,<0.9.0"]

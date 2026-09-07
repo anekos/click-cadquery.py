@@ -15,6 +15,7 @@ from typing import IO, Any, Literal, TypeVar
 
 import cadquery as cq
 import click
+import simpleeval
 from cadquery import vis
 from click.core import ParameterSource
 from pydantic import BaseModel, ValidationError
@@ -25,6 +26,75 @@ T = TypeVar("T", bound=BaseModel)
 
 # (param, output, show, screenshot, inline_show)
 CommandFunction = Callable[[T, Path | None, bool, bool, bool], None]
+
+
+def _eval_arithmetic(text: str) -> int | float:
+    """Evaluate a numeric literal or a simple arithmetic expression with
+    simpleeval — no names or functions, and the result must be numeric.
+    Raises ValueError on anything else."""
+    try:
+        value = simpleeval.simple_eval(text, functions={}, names={})
+    except ZeroDivisionError:
+        raise ValueError(f"{text!r}: division by zero") from None
+    except (SyntaxError, simpleeval.InvalidExpression):
+        raise ValueError(f"{text!r} is not a number or arithmetic expression") from None
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        # ValueError, not TypeError: this validates user input, not an argument
+        raise ValueError(  # noqa: TRY004
+            f"{text!r} is not a number or arithmetic expression"
+        )
+    return value
+
+
+def _parse_number(anot: type, text: str) -> int | float:
+    """`text` as an `anot` (int or float): a literal or a simple arithmetic
+    expression. An int result must be a whole number (`6/2` is fine, `7/2`
+    is not). Raises ValueError otherwise."""
+    value = _eval_arithmetic(text)
+    if anot is int:
+        if isinstance(value, float):
+            if not value.is_integer():
+                raise ValueError(f"{text!r} is not an integer (got {value})")
+            value = int(value)
+        return value
+    return float(value)
+
+
+class _ArithmeticNumber(click.ParamType):
+    """A numeric click type that also accepts simple arithmetic expressions
+    (e.g. `100/3`, `(25+4)*2`)."""
+
+    python_type: type
+
+    def convert(
+        self, value: Any, param: click.Parameter | None, ctx: click.Context | None
+    ) -> Any:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return self.python_type(value)
+        try:
+            return _parse_number(self.python_type, value)
+        except ValueError as e:
+            self.fail(str(e), param, ctx)
+
+
+class _ArithmeticInt(_ArithmeticNumber):
+    name = "integer"
+    python_type = int
+
+
+class _ArithmeticFloat(_ArithmeticNumber):
+    name = "float"
+    python_type = float
+
+
+def _click_type(anot: type) -> Any:
+    """The click type for a field annotation: int/float get expression
+    support, everything else is handed to click as-is."""
+    if anot is int:
+        return _ArithmeticInt()
+    if anot is float:
+        return _ArithmeticFloat()
+    return anot
 
 
 def define_options(klass: type[BaseModel]):  # type: ignore
@@ -111,10 +181,11 @@ def _add_param_options(
 
         assert isinstance(anot, type)
 
-        # e.g. @click.option("--width", type=float, default=100.0)
+        # e.g. @click.option("--width", type=float, default=100.0);
+        # int/float options also accept arithmetic like --width 100/2
         decorated = click.option(
             _to_option_name(field_name),
-            type=anot,
+            type=_click_type(anot),
             default=field_data.default,
             help=field_data.description,
         )(decorated)
@@ -501,9 +572,11 @@ def _prompt_for_field(field_name: str, field_data: Any, current: Any) -> Any:
         raw = click.prompt(
             label, default="" if current is None else str(current), show_default=True
         )
-        return None if raw == "" else anot(raw)
+        if raw == "":
+            return None
+        return _parse_number(anot, raw) if anot in (int, float) else anot(raw)
 
-    return click.prompt(label, default=current, type=anot)
+    return click.prompt(label, default=current, type=_click_type(anot))
 
 
 def _prompt_param(Param: type[TP], overrides: dict[str, Any] | None = None) -> TP:
